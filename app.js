@@ -66,9 +66,9 @@ async function main() {
           const lastItem = threadItems[0];
 
           // Create message objects and add them to array
-          const messages = threadItems.map((item) => {
+          const messages = threadItems.reverse().map((item) => {
             return createMessage(
-              item.is_sent_by_viewer ? "user" : "assistant",
+              item.is_sent_by_viewer ? "assistant" : "user",
               item.text
             );
           });
@@ -133,4 +133,8 @@ async function main() {
 
 function createMessage(role, content) {
   return { role, content };
+}
+
+function logIn() {
+  
 }
