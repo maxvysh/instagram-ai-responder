@@ -1,5 +1,6 @@
 import { IgApiClient } from "instagram-private-api";
 import { config } from "dotenv";
+import fs from "fs";
 
 config();
 main();
@@ -15,7 +16,20 @@ async function main() {
     process.exit(1);
   }
 
-  const repliedThreads = new Set();
+  let repliedThreads;
+  try {
+    const data = fs.readFileSync("repliedThreads.json", "utf8");
+    repliedThreads = new Set(JSON.parse(data));
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      console.log("File does not exist, creating a new one...");
+      fs.writeFileSync("repliedThreads.json", JSON.stringify([]), "utf8");
+      repliedThreads = new Set();
+    } else {
+      console.log("Error reading file from disk:", err);
+      process.exit(1);
+    }
+  }
 
   (async () => {
     // Login
@@ -30,12 +44,9 @@ async function main() {
 
     // process.nextTick(async () => await ig.simulate.postLoginFlow());
 
-    console.log("Polling for DMs...");
-
     // Poll for DMs every 10 seconds
     setInterval(async () => {
       console.log("Polling...");
-      console.log(repliedThreads);
       // For every new DM check if it says "FOO"
       try {
         const inbox = await ig.feed.directInbox().items();
@@ -64,31 +75,51 @@ async function main() {
           );
 
           // TESTS
-          console.log(threadTitle.toString());
-          console.log(
-            JSON.stringify(
-              threadItems
-                .filter((item) => item.is_sent_by_viewer === false)
-                .filter((item) => item.item_type === "text")
-                .map((item) => item.text)
-                .slice(0, 5)
-            )
-          );
-          console.log(lastItem.text);
+          // console.log(threadId);
+          // console.log(threadTitle.toString());
+          // console.log(
+          //   JSON.stringify(
+          //     threadItems
+          //       .filter((item) => item.is_sent_by_viewer === false)
+          //       .filter((item) => item.item_type === "text")
+          //       .map((item) => item.text)
+          //       .slice(0, 5)
+          //   )
+          // );
+          // console.log(lastItem.text);
           // END TESTS
 
-          if (lastItem.text === process.env.IN_TEXT && !repliedThreads.has(threadId)) {
+          if (
+            lastItem.is_sent_by_viewer === false &&
+            lastItem.text === process.env.IN_TEXT &&
+            !repliedThreads.has(threadId)
+          ) {
             console.log(`Received ${process.env.IN_TEXT} from ${threadTitle}`);
-            await ig.entity.directThread(threadId).broadcastText(process.env.OUT_TEXT);
+            await ig.entity
+              .directThread(threadId)
+              .broadcastText(process.env.OUT_TEXT);
             repliedThreads.add(threadId);
-          } else if (repliedThreads.has(threadId)) {
+            try {
+              fs.writeFileSync(
+                "repliedThreads.json",
+                JSON.stringify(Array.from(repliedThreads))
+              );
+            } catch (err) {
+              console.log("Error writing file to disk:", err);
+            }
+          } else if (
+            lastItem.is_sent_by_viewer === false &&
+            repliedThreads.has(threadId)
+          ) {
             console.log(`Already replied to ${threadTitle}`);
+            await ig.entity
+              .directThread(threadId)
+              .broadcastText("I've already replied to you.");
           }
         });
       } catch (e) {
         console.log(e);
-        restartMainProcess();
-        process.exit(1);
+        main();
       }
     }, 30000);
   })();
